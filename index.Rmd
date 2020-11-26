@@ -1,0 +1,174 @@
+---
+title: "Practical Machine Learning Course Project1"
+author: "Janine Djeundje"
+date: "26/11/2020"
+output: html_document
+---
+
+In this project, our objective is to quantify the performance of participants on weight lifting exercises. Their performance depends on which class they are classified given the selected variables(the belt, forearm, arm, and dumbell) in the data. There are five classes in this effect: Class A - exactly according to the specification, Class B -throwing the elbows to the front, Class C - lifting the dumbbell only halfway, Class D - lowering the dumbbell only halfway, and Class E - throwing the hips to the front, however, only Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. The data we will use came from this source  (http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har). We will proceed with the following steps:
+
+**1-Loading the data**
+
+```{r, echo= TRUE}
+library(caret)
+library(rattle) 
+library(rpart) 
+library(rpart.plot) 
+library(RColorBrewer)
+library(randomForest)
+library(ggplot2)
+```
+
+
+```{r, echo= TRUE}
+Trainingset <- read.csv("C:/Users/Lenovo/Documents/coursera/Practical Machine learning/pml-training.csv")
+Testset <- read.csv("C:/Users/Lenovo/Documents/coursera/Practical Machine learning/pml-testing.csv")
+```
+
+**2-Processing the data**
+
+First let us remove the first seven variables from our data set as they do not have any predicting power on our outcome classe and also we will remove all columns which are almost empty and those with majority NAs.
+
+```{r, echo= TRUE}
+Trainingset1 <- Trainingset[,-c(1:7)]
+Testset1 <- Testset[,-c(1:7)]
+```
+
+*Keeps columns with no NAs*
+
+```{r, echo= TRUE}
+Trainingset1_new <- Trainingset1[ , colSums(is.na(Trainingset1))==0]
+Testset1_new <-Testset1[ , colSums(is.na(Testset1))==0]
+dim(Trainingset1_new)
+dim(Testset1_new)
+```
+
+
+*Remove columns that are almost empty from the data set*
+
+Convert the empty cell to NA and then remove the NAs
+
+```{r, echo= TRUE}
+Trainingset1_new[Trainingset1_new == ""] <- NA
+Trainingset2_new <- Trainingset1_new[,colSums(is.na(Trainingset1_new)) < 19216]
+Testset1_new <-Testset1[ , colSums(is.na(Testset1))< 20]
+
+dim(Trainingset2_new)
+dim(Testset1_new)
+```
+
+*Our training set is Trainingset2_new and our testing set is Testset1_new*
+
+*Check if the training and testing sets have the same non-class variables*
+
+```{r, echo= TRUE}
+table((colnames(Trainingset2_new[,-53])==colnames(Testset1_new[,-53])))
+```
+
+We can conclude that the non-class variables have the same names.
+
+*Splitting the training data set into the training and validation data sets.*
+
+```{r, echo= FALSE}
+set.seed(11945)
+inTrain <- createDataPartition(Trainingset2_new$classe, p=0.6, list=FALSE)
+Trainingset3_new <- Trainingset2_new[inTrain,]
+Validationset <- Trainingset2_new[-inTrain,]
+dim(Trainingset3_new); dim(Validationset)
+```
+
+
+**3-Building the machine learning algorithms on the training set then validate them on the validation set before using them on the test set.**
+
+*We start with decision tree*
+
+In this model, we choose to use the 10-fold cross validation for model selection as this helps to reduce the bias.
+
+```{r, echo= TRUE}
+set.seed(11945)
+fitControl <- trainControl(method = "cv",number = 10)
+modFitDT <- train(classe ~ ., method="rpart", data = Trainingset3_new, trControl = fitControl)
+modFitDT
+library(rattle)
+fancyRpartPlot(modFitDT$finalModel)
+```
+
+*Validate the model on the validation set*
+
+From the result above, we have an accuracy of 52%, with an out-of-sample error as we could see below of a little more than 50%. These results show that the decision tree in this case is performing very poorly with a low accuracy and a high out-of-sample error.
+
+```{r, echo= TRUE}
+prediction <- predict(modFitDT, newdata = Validationset)
+treeAccuracy <- 1 - sum(Validationset$classe!=prediction) / nrow(Validationset)
+treeAccuracy
+```
+
+*Random Forest model building*
+
+We also considered using random forest as it is highly accurate alongside boosting model compare to others.
+Using this (https://github.com/lgreski/datasciencectacontent/blob/master/markdown/pml-requiredModelAccuracy.md) article, the running time of the random forest model was reduced considerably..
+
+```{r, echo= TRUE}
+set.seed(11945)
+fitControl <- trainControl(method = "cv",number = 10,allowParallel = TRUE)
+modelFitRF <- train(classe ~., method="rf", data = Trainingset3_new, trControl = fitControl)
+print(modelFitRF)
+plot(modelFitRF)
+```
+
+*Validate the model on the validation set*
+
+From the result above, we have an accuracy of 99%, with an out-of-sample error as we could see below of almost 1% . These results show that random forest performs very well with a high accuracy and a low out-of-sample error.
+
+```{r, echo= TRUE}
+prediction <- predict(modelFitRF, newdata = Validationset)
+RFAccuracy <- 1 - sum(Validationset$classe!=prediction) / nrow(Validationset)
+RFAccuracy
+```
+
+
+*Boosting model building*
+
+We also considered boosting algorithm so that we can compare it with random forest in this project. 
+
+```{r, echo= TRUE}
+set.seed(11945)
+modFit_Boosting <- train(classe~., method="gbm", data= Trainingset3_new, verbose=FALSE, trControl = trainControl(method = "cv", number = 10))
+print(modFit_Boosting)
+plot(modFit_Boosting)
+```
+
+*Validate the model on the validation set*
+
+From the result above, we have an accuracy of 96% with an out-of-sample error as we could see below of less than 4%. These results show that boosting algorithm performs very well with a high accuracy and a low out-of-sample error.However, compare to random forest, its accuracy is a bit low with an out-of-sample error a bit high. 
+
+```{r, echo= TRUE}
+prediction <- predict(modFit_Boosting, Validationset)
+Boosting_Accuracy <- 1 - sum(Validationset$classe!=prediction) / nrow(Validationset)
+Boosting_Accuracy
+```
+
+From the three algorithms perform above on our data, we could see that random forest is the most accurate(99%) with a low out-of-sample error(less than 1%).  
+
+**Prediction on the testing set using all three models built**
+
+*Decision Tree model*
+
+```{r, echo= TRUE}
+prediction <- predict(modFitDT, newdata = Testset1_new)
+prediction
+```
+
+*Random Forest Model*
+
+```{r, echo= TRUE}
+prediction <- predict(modelFitRF,Testset1_new)
+prediction
+```
+
+*Boosting Model*
+
+```{r, echo= TRUE}
+prediction <- predict(modFit_Boosting, Testset1_new)
+prediction
+```
